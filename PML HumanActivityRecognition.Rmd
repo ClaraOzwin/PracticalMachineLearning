@@ -1,0 +1,86 @@
+---
+title: "PML HumanActivityRecognition"
+output: html_document
+---
+##### Practical Machine Learning Assignment, John's Hopkins Data Science Course
+
+##### Summary
+Accelerometer data is used to model weight lifting activity and predict whether an exercise was performed properly. A random forest model is built with an overall accuracy of 99% and an expected out-of-sample error of .007%. The resulting model correctly predicts 20 different test cases. 
+
+#### Getting the data
+```{r download, warning=FALSE, message=FALSE, cache=TRUE}
+if (!file.exists("data")) dir.create("data")
+
+trainingURL = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testingURL = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(trainingURL, "./data/pml-training.csv", method="curl")
+download.file(testingURL, "./data/pml-testing.csv", method="curl")
+
+```
+
+```{r loadData, warning=FALSE, message=FALSE, cache=TRUE}
+training.raw <- read.csv("./data/pml-training.csv", header=TRUE, na.strings=c(""," ","NA"))
+testing.raw <- read.csv("./data/pml-testing.csv", header=TRUE, na.strings=c(""," ","NA"))
+```
+
+#### Cleaning the data
+The raw training data consists of 19622 observations of 160 variables. Inspection of the data (e.g., head(training.raw), summary(training.raw)) shows initial columns with name and timestamps that can be removed as well as many columns with missing values. Removing these leaves 53 variables.
+```{r cleanData, warning=FALSE, message=FALSE}
+dim(training.raw)
+dim(testing.raw)
+
+# remove initial columns with name and timestamp information
+training <- training.raw[,-c(1:7)]
+testing <- testing.raw[,-c(1:7)]
+
+# remove NAs and missing values
+training <- training[,colSums(is.na(training))==0]
+testing <- testing[,colSums(is.na(testing))==0]
+dim(training)
+```
+
+#### Cross Validation
+Use cross validataion to estimate test set accuracy with the training set. Split the training set into training and testing subsets.Build a model on the training subset and evaluate it on the testing subset. 
+
+```{r datasplitting, warning=FALSE, message=FALSE, cache=TRUE}
+require(caret)
+inTrain <- createDataPartition(y=training$classe, p=0.60, list=FALSE,)
+subTraining <- training[inTrain,]
+subTesting <- training[-inTrain,]
+dim(subTraining); dim(subTesting)
+```
+
+#### Fit a model
+Build a model on the training subset. Use random forest model because of its good accuracy, although it can be slow. Use cross validation to build a robust model, with a low number of folds to keep the runtime in check. 
+```{r randomForest, warning=FALSE, message=FALSE, cache=TRUE}
+set.seed(32323)
+train_control <- trainControl(method="cv", number=3)
+model.rf <- train(classe ~., data=subTraining, trControl=train_control,  method="rf", tuneLength=1)
+model.rf
+```
+
+#### Expected Out of Sample Error
+The validation set (the subTesting set) was not used for training the model, so we can use it to estimate performance on unseen data. The accuracy of our model is high at 99%, so the expected out of sample error rate is a low .007, so there is no need to refine this model further.
+```{r evaluateTest}
+predict.rf <- predict(model.rf, subTesting)
+conf.results <- confusionMatrix(predict.rf,subTesting$classe)
+conf.results
+```
+
+#### Predicting New Values
+Use the model to predict the unseen test set. The predictions are correct on the 20 test cases, as expected given the model accuracy and low out of sample error.
+```{r finalPredict, warning=FALSE, message=FALSE}
+test.results <- predict(model.rf, testing)
+test.results
+```
+
+This plot shows the relative importance of the top 30 parameters in the model.
+```{r plot}
+plot(varImp(model.rf, scale=FALSE), top=30)
+```
+
+
+##### References
+
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. http://groupware.les.inf.puc-rio.br/har. 
